@@ -1,6 +1,7 @@
 //! tests/health_check.rs
 
 use reqwest;
+use std::net::TcpListener;
 use zero2prod;
 
 // `tokio::test` is the testing equivalent of `tokio::main`.
@@ -9,11 +10,11 @@ use zero2prod;
 // `cargo expand --test health_check` (<- name of the test file) #[tokio::test]
 #[tokio::test]
 async fn health_check_works() {
-    spawn_app();
+    let address = spawn_app();
     let client: reqwest::Client = reqwest::Client::new();
 
     let response = client
-        .get("http://127.0.0.1:8000/health_check")
+        .get(&format!("{}/health_check", &address))
         .send()
         .await
         .expect("Failed to execute request");
@@ -22,7 +23,11 @@ async fn health_check_works() {
     assert_eq!(Some(0), response.content_length());
 }
 
-fn spawn_app() -> () {
-    let server: actix_web::dev::Server = zero2prod::run().expect("erreur serveur");
-    let _ = tokio::spawn(server);
+fn spawn_app() -> String {
+    let tcp_listener = TcpListener::bind("127.0.0.1:0").expect("Fail to create listener");
+    let port = tcp_listener.local_addr().unwrap().port();
+    let server: actix_web::dev::Server =
+        zero2prod::run(tcp_listener).expect("Failed to create server");
+    tokio::spawn(server);
+    format!("http://127.0.0.1:{}", port)
 }
