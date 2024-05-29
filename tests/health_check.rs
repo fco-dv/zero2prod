@@ -2,7 +2,7 @@
 
 use reqwest;
 use std::net::TcpListener;
-use zero2prod;
+use zero2prod::startup::run;
 
 // `tokio::test` is the testing equivalent of `tokio::main`.
 // It also spares you from having to specify the `#[test]` attribute. //
@@ -70,8 +70,7 @@ async fn subscribe_returns_a_400_for_non_valid_form_data() {
 fn spawn_app() -> String {
     let tcp_listener = TcpListener::bind("127.0.0.1:0").expect("Fail to create listener");
     let port = tcp_listener.local_addr().unwrap().port();
-    let server: actix_web::dev::Server =
-        zero2prod::run(tcp_listener).expect("Failed to create server");
+    let server: actix_web::dev::Server = run(tcp_listener).expect("Failed to create server");
     tokio::spawn(server);
     format!("http://127.0.0.1:{}", port)
 }
