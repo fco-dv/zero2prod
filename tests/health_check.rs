@@ -1,8 +1,10 @@
 //! tests/health_check.rs
 
 use reqwest;
+use sqlx::{Connection, PgConnection, PgPool};
 use std::net::TcpListener;
-use zero2prod::startup::run;
+use zero2prod::configuration::get_configuration;
+use zero2prod::{configuration, startup::run};
 
 // `tokio::test` is the testing equivalent of `tokio::main`.
 // It also spares you from having to specify the `#[test]` attribute. //
@@ -26,6 +28,14 @@ async fn health_check_works() {
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     let address = spawn_app();
+
+    let configuration: configuration::Settings =
+        get_configuration().expect("Failed to get DB configuration");
+    let connection_string: String = configuration.database.connection_string();
+    let mut connection: PgConnection = PgConnection::connect(&connection_string)
+        .await
+        .expect("Error connect to postgres");
+
     let client: reqwest::Client = reqwest::Client::new();
     let form_data = "name=francois&email=francois@gmail.com";
     let response = client
@@ -37,6 +47,13 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
         .expect("Failed to execute request");
 
     assert!(response.status().is_success());
+
+    let saved = sqlx::query!("SELECT email, name FROM subscriptions",)
+        .fetch_one(&mut connection)
+        .await
+        .expect("Error fetching a subscription row");
+    assert_eq!(saved.name, "francois@mail.com");
+    assert_eq!(saved.email, "francois");
 }
 
 #[tokio::test]
@@ -66,11 +83,18 @@ async fn subscribe_returns_a_400_for_non_valid_form_data() {
         )
     }
 }
-
+pub struct TestApp {
+    pub address: String,
+    pub db_pool: PgPool,
+}
 fn spawn_app() -> String {
     let tcp_listener = TcpListener::bind("127.0.0.1:0").expect("Fail to create listener");
     let port = tcp_listener.local_addr().unwrap().port();
-    let server: actix_web::dev::Server = run(tcp_listener).expect("Failed to create server");
+    let address = format!("http://127.0.0.1:{}", port);
+    let db_pool = PgPool::connect(&address)
+        .await
+        .expect("failed to create connection pool");
+    let server: actix_web::dev::Server =
+        run(tcp_listener, db_pool).expect("Failed to create server");
     tokio::spawn(server);
-    format!("http://127.0.0.1:{}", port)
 }
